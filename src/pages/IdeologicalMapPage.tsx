@@ -1,71 +1,194 @@
-import { useEffect, useState } from 'react';
-import { getArticles } from '@/lib/api';
-import type { Article } from '@/lib/types';
-import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { useEffect, useState } from "react"
+import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
+import { getArticles } from "@/lib/api"
+import type { Article } from "@/lib/types"
+
+interface Point {
+  x: number
+  y: number
+  headline: string
+  publisher: string
+  date: string
+  color: string
+}
 
 export default function IdeologicalMapPage() {
-  const [articles, setArticles] = useState<Article[]>([]);
+
+  const [data, setData] = useState<Point[]>([])
 
   useEffect(() => {
-    getArticles().then(setArticles);
-  }, []);
 
-  const data = articles.map(a => ({
-    x: a.politicalLeaning,
-    y: a.emotionalIntensity,
-    name: a.headline,
-    publisher: a.publisher,
-  }));
+    getArticles().then((articles: Article[]) => {
 
-  return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Ideological Map</h1>
-        <p className="text-sm text-muted-foreground mt-1">Articles plotted by political leaning vs emotional intensity</p>
+      const mapped = articles.map(article => ({
+
+        x: article.politicalLeaning ?? 0,
+
+        // prevent log scale crash at zero
+        y: Math.max(article.emotionalIntensity ?? 0.001, 0.001),
+
+        headline: article.headline,
+
+        publisher: article.publisher,
+
+        date: article.date,
+
+        color: getColor(article.politicalLeaning ?? 0)
+
+      }))
+
+      setData(mapped)
+
+    })
+
+  }, [])
+
+
+  function getColor(leaning: number) {
+
+    if (leaning < -0.2) return "#3b82f6"  // Left: blue
+
+    if (leaning > 0.2) return "#ef4444"   // Right: red
+
+    return "#6b7280"                      // Center: gray
+
+  }
+
+
+  function CustomDot(props: any) {
+
+    const { cx, cy, payload } = props
+
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        fill={payload.color}
+        opacity={0.85}
+      />
+    )
+
+  }
+
+
+  function CustomTooltip({ active, payload }: any) {
+
+    if (!active || !payload?.length) return null
+
+    const p = payload[0].payload
+
+    return (
+
+      <div className="bg-card border rounded p-3 shadow text-sm">
+
+        <div className="font-semibold">{p.headline}</div>
+
+        <div className="text-muted-foreground text-xs mt-1">
+          {p.publisher} • {new Date(p.date).toLocaleDateString()}
+        </div>
+
+        <div className="mt-2 text-xs">
+          Leaning: {p.x.toFixed(2)}<br/>
+          Emotional intensity: {(p.y * 100).toFixed(1)}%
+        </div>
+
       </div>
 
-      <div className="rounded-lg border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-6 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bias-left" /> Left</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bias-center" /> Center</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bias-right" /> Right</span>
+    )
+
+  }
+
+
+  return (
+
+    <div className="space-y-6 p-6">
+
+      <div>
+
+        <h1 className="text-2xl font-bold">Ideological Map</h1>
+
+        <p className="text-muted-foreground text-sm mt-1">
+          Political leaning vs emotional intensity (log-scaled)
+        </p>
+
+      </div>
+
+
+      {/* Legend */}
+
+      <div className="flex gap-6 text-sm">
+
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-blue-500"/>
+          Left
         </div>
-        <ResponsiveContainer width="100%" height={450}>
-          <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-gray-500"/>
+          Center
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-500"/>
+          Right
+        </div>
+
+      </div>
+
+
+      <div className="border rounded-lg bg-card p-4">
+
+        <ResponsiveContainer width="100%" height={500}>
+
+          <ScatterChart>
+
+            <CartesianGrid strokeDasharray="3 3" />
+
             <XAxis
               type="number"
               dataKey="x"
               domain={[-1, 1]}
-              tick={{ fontSize: 10 }}
-              stroke="hsl(var(--muted-foreground))"
-              label={{ value: 'Political Leaning (Left → Right)', position: 'bottom', fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+              tickFormatter={(v) =>
+                v < -0.2 ? "Left"
+                : v > 0.2 ? "Right"
+                : "Center"
+              }
+              label={{
+                value: "Political Leaning",
+                position: "insideBottom",
+                offset: -5
+              }}
             />
+
             <YAxis
               type="number"
               dataKey="y"
-              domain={[0, 1]}
-              tick={{ fontSize: 10 }}
-              stroke="hsl(var(--muted-foreground))"
-              label={{ value: 'Emotional Intensity', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-            />
-            <Tooltip
-              content={({ payload }) => {
-                if (!payload?.length) return null;
-                const d = payload[0].payload;
-                return (
-                  <div className="rounded-lg border bg-card p-3 shadow-md text-xs max-w-[240px]">
-                    <p className="font-semibold text-card-foreground">{d.name}</p>
-                    <p className="text-muted-foreground">{d.publisher}</p>
-                    <p className="mt-1 text-muted-foreground">Leaning: {d.x.toFixed(2)} | Intensity: {(d.y * 100).toFixed(0)}%</p>
-                  </div>
-                );
+              scale="log"
+              domain={[0.001, 1]}
+              tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              label={{
+                value: "Emotional Intensity (log)",
+                angle: -90,
+                position: "insideLeft"
               }}
             />
-            <Scatter data={data} fill="hsl(var(--primary))" fillOpacity={0.7} r={6} />
+
+            <Tooltip content={<CustomTooltip />} />
+
+            <Scatter
+              data={data}
+              shape={<CustomDot />}
+            />
+
           </ScatterChart>
+
         </ResponsiveContainer>
+
       </div>
+
     </div>
-  );
+
+  )
+
 }
