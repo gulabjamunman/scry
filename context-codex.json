@@ -1,0 +1,88 @@
+{
+  "project_name": "Media Bias Review System",
+  "stack": {
+    "frontend": "React + TypeScript + Vite",
+    "backend": "Supabase",
+    "auth": "Supabase Auth",
+    "charts": "Recharts",
+    "styling": "TailwindCSS"
+  },
+
+  "database_tables": {
+
+    "processed_articles": {
+      "id": "uuid",
+      "headline": "text",
+      "publisher_name": "text",
+      "publication_datetime": "timestamp",
+      "content": "text",
+      "ai_framing_direction": "float (-1 to 1)",
+      "ai_emotional_intensity": "float (0 to 1)",
+      "ai_us_vs_them_score": "float (0 to 1)",
+      "ai_threat_signal": "float (0 to 1)",
+      "ai_sensationalism": "float (0 to 1)"
+    },
+
+    "human_reviews": {
+      "id": "uuid",
+      "article_id": "uuid",
+      "reviewer_id": "uuid",
+      "political": "float (-1 to 1)",
+      "intensity": "int (1 to 5)",
+      "sensational": "int (1 to 5)",
+      "threat": "int (1 to 5)",
+      "group_conflict": "int (1 to 5)",
+      "comment": "text",
+      "highlighted_sentence": "text",
+      "created_at": "timestamp"
+    },
+
+    "reviewers": {
+      "id": "uuid",
+      "email": "text",
+      "created_at": "timestamp"
+    }
+  },
+
+  "core_logic": {
+
+    "review_flow": [
+      "Load article",
+      "Validate content length >= 200 characters",
+      "Allow submit or skip",
+      "After submit or skip load next article from queue",
+      "If queue empty redirect to reviewer dashboard"
+    ],
+
+    "analytics_logic": {
+      "ai_scores": "0-1 scale",
+      "human_scores": "1-5 scale",
+      "distribution": "percentile based",
+      "reviewer_profile": "based on averages and dominant signals"
+    }
+  },
+
+  "important_files": {
+
+    "api": "src/lib/api.ts",
+
+    "auth": "src/lib/auth.tsx",
+
+    "review_page": "src/pages/ReviewPage.tsx",
+
+    "reviewer_dashboard": "src/pages/ReviewerDashboardPage.tsx",
+
+    "analytics_page": "src/pages/AnalyticsPage.tsx"
+  },
+
+  "known_constraints": [
+
+    "Minimum article content length must be 200 characters",
+
+    "getReviewQueue requires reviewerId",
+
+    "human_reviews uses snake_case column names",
+
+    "Frontend uses camelCase mapping"
+  ]
+}
