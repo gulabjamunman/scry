@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-
 import { useNavigate } from "react-router-dom"
 
 import {
@@ -10,8 +9,7 @@ import {
   Brain
 } from "lucide-react"
 
-import { signOut } from "@/lib/auth"
-
+import { signOut, useAuth } from "@/lib/auth"
 import { getReviewerAnalytics } from "@/lib/api"
 
 
@@ -46,22 +44,115 @@ export default function ReviewerDashboardPage() {
 
   const navigate = useNavigate()
 
+  const { user, loading: authLoading } = useAuth()
+
   const [analytics, setAnalytics] =
     useState<Analytics | null>(null)
+
+  const [loading, setLoading] =
+    useState(true)
 
   const [loggingOut, setLoggingOut] =
     useState(false)
 
 
 
+  /* ============================
+     LOAD ANALYTICS SAFELY
+  ============================ */
+
   useEffect(() => {
 
-    getReviewerAnalytics()
-      .then(setAnalytics)
+    async function load() {
 
-  }, [])
+      try {
+
+        // wait until auth finishes resolving
+        if (authLoading)
+          return
+
+        // if no user, redirect to login
+        if (!user) {
+
+          navigate("/login")
+          return
+
+        }
+
+        const data =
+          await getReviewerAnalytics()
+
+        if (!data) {
+
+          setAnalytics({
+
+            reviewed: 0,
+            total: 0,
+
+            streak: 0,
+
+            avgPolitical: 0,
+            avgIntensity: 0,
+            avgThreat: 0,
+            avgSensationalism: 0,
+            avgGroupConflict: 0,
+
+            publishers: [],
+
+            dominantType: "New reviewer",
+
+            ideologyBias: "No pattern detected"
+
+          })
+
+        }
+        else {
+
+          setAnalytics(data)
+
+        }
+
+      }
+      catch (err) {
+
+        console.error("Dashboard load error:", err)
+
+        setAnalytics({
+
+          reviewed: 0,
+          total: 0,
+
+          streak: 0,
+
+          avgPolitical: 0,
+          avgIntensity: 0,
+          avgThreat: 0,
+          avgSensationalism: 0,
+          avgGroupConflict: 0,
+
+          publishers: [],
+
+          dominantType: "Error loading profile",
+
+          ideologyBias: "Unavailable"
+
+        })
+
+      }
+
+      setLoading(false)
+
+    }
+
+    load()
+
+  }, [user, authLoading, navigate])
 
 
+
+  /* ============================
+     LOGOUT
+  ============================ */
 
   async function handleLogout() {
 
@@ -75,7 +166,11 @@ export default function ReviewerDashboardPage() {
 
 
 
-  if (!analytics) {
+  /* ============================
+     LOADING STATE
+  ============================ */
+
+  if (loading || authLoading) {
 
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -87,6 +182,22 @@ export default function ReviewerDashboardPage() {
 
 
 
+  if (!analytics) {
+
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        Failed to load dashboard
+      </div>
+    )
+
+  }
+
+
+
+  /* ============================
+     PROGRESS CALCULATION
+  ============================ */
+
   const progress =
     analytics.total === 0
       ? 0
@@ -94,27 +205,44 @@ export default function ReviewerDashboardPage() {
 
 
 
+  /* ============================
+     AI INTERPRETATION TEXT
+  ============================ */
+
   function aiInterpretation() {
 
     return `
 You appear to be a ${analytics.dominantType}.
-Your ideological detection pattern suggests: ${analytics.ideologyBias}.
 
-Your emotional intensity sensitivity score is ${analytics.avgIntensity.toFixed(2)}.
-Your threat sensitivity score is ${analytics.avgThreat.toFixed(2)}.
+Your ideological detection pattern suggests:
+${analytics.ideologyBias}.
 
-This indicates how your perceptual system prioritizes narrative signals.
-    `
+Your emotional sensitivity score:
+${analytics.avgIntensity.toFixed(2)} / 5
+
+Your threat sensitivity score:
+${analytics.avgThreat.toFixed(2)} / 5
+
+Your sensationalism sensitivity score:
+${analytics.avgSensationalism.toFixed(2)} / 5
+
+This profile represents how your cognitive system detects narrative signals.
+`
 
   }
 
 
 
+  /* ============================
+     COMPONENT UI
+  ============================ */
+
   return (
 
     <div className="p-6 lg:p-8 space-y-6 max-w-5xl">
 
-      {/* Header */}
+
+      {/* HEADER */}
 
       <div className="flex justify-between items-center">
 
@@ -147,7 +275,7 @@ This indicates how your perceptual system prioritizes narrative signals.
 
 
 
-      {/* Progress */}
+      {/* PROGRESS */}
 
       <div className="border rounded-lg p-5 bg-card space-y-3">
 
@@ -168,7 +296,7 @@ This indicates how your perceptual system prioritizes narrative signals.
         <div className="w-full bg-muted rounded-full h-2">
 
           <div
-            className="bg-primary h-2 rounded-full"
+            className="bg-primary h-2 rounded-full transition-all"
             style={{ width: `${progress}%` }}
           />
 
@@ -178,7 +306,7 @@ This indicates how your perceptual system prioritizes narrative signals.
 
 
 
-      {/* Streak */}
+      {/* STREAK */}
 
       <div className="border rounded-lg p-5 bg-card space-y-2">
 
@@ -200,7 +328,7 @@ This indicates how your perceptual system prioritizes narrative signals.
 
 
 
-      {/* Publisher distribution */}
+      {/* PUBLISHERS */}
 
       <div className="border rounded-lg p-5 bg-card space-y-3">
 
@@ -215,15 +343,17 @@ This indicates how your perceptual system prioritizes narrative signals.
         <div className="space-y-1">
 
           {analytics.publishers.length === 0 && (
+
             <div className="text-sm text-muted-foreground">
               No reviews yet
             </div>
+
           )}
 
-          {analytics.publishers.map(p => (
+          {analytics.publishers.map((p, i) => (
 
             <div
-              key={p.publisher}
+              key={`${p.publisher}-${i}`}
               className="flex justify-between text-sm"
             >
 
@@ -243,7 +373,7 @@ This indicates how your perceptual system prioritizes narrative signals.
 
 
 
-      {/* Perceptual averages */}
+      {/* PERCEPTUAL PROFILE */}
 
       <div className="border rounded-lg p-5 bg-card space-y-3">
 
@@ -256,25 +386,25 @@ This indicates how your perceptual system prioritizes narrative signals.
           <div>
             Emotional sensitivity:
             {" "}
-            {analytics.avgIntensity.toFixed(2)}
+            {analytics.avgIntensity.toFixed(2)} / 5
           </div>
 
           <div>
             Threat sensitivity:
             {" "}
-            {analytics.avgThreat.toFixed(2)}
+            {analytics.avgThreat.toFixed(2)} / 5
           </div>
 
           <div>
             Sensationalism sensitivity:
             {" "}
-            {analytics.avgSensationalism.toFixed(2)}
+            {analytics.avgSensationalism.toFixed(2)} / 5
           </div>
 
           <div>
             Ideological sensitivity:
             {" "}
-            {analytics.avgPolitical.toFixed(2)}
+            {analytics.avgPolitical.toFixed(2)} / 5
           </div>
 
         </div>
@@ -283,7 +413,7 @@ This indicates how your perceptual system prioritizes narrative signals.
 
 
 
-      {/* AI interpretation */}
+      {/* AI INTERPRETATION */}
 
       <div className="border rounded-lg p-5 bg-card space-y-3">
 

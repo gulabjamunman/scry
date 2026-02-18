@@ -4,275 +4,451 @@ import { getArticleById, getReviewQueue, submitReview } from "@/lib/api";
 import type { Article } from "@/lib/types";
 import { SpectrumBar } from "@/components/SpectrumBar";
 import { HeatBar } from "@/components/HeatBar";
-import { ArrowLeft, Send, SkipForward } from "lucide-react";
+import { ArrowLeft, Send, SkipForward, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 
-type PoliticalDirection = "left" | "neutral" | "right" | null;
+
+const MIN_CONTENT_LENGTH = 200;
+
 
 export default function ReviewPage() {
+
   const { articleId } = useParams<{ articleId: string }>();
+
   const navigate = useNavigate();
-  const { user } = useAuth();
+
+  const { user, loading } = useAuth();
+
 
   const [article, setArticle] = useState<Article | null>(null);
 
-  const [politicalDirection, setPoliticalDirection] = useState<PoliticalDirection>(null);
-  const [politicalIntensity, setPoliticalIntensity] = useState(3);
-
-  const [intensity, setIntensity] = useState(3);
-  const [sensationalism, setSensationalism] = useState(3);
-  const [threat, setThreat] = useState(3);
-  const [groupConflict, setGroupConflict] = useState(3);
-
-  const [comment, setComment] = useState("");
-  const [highlighted, setHighlighted] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [loadingArticle, setLoadingArticle] = useState(true);
+
+
+  const [intensity, setIntensity] = useState(3);
+
+  const [sensationalism, setSensationalism] = useState(3);
+
+  const [threat, setThreat] = useState(3);
+
+  const [groupConflict, setGroupConflict] = useState(3);
+
+
+  const [comment, setComment] = useState("");
+
+  const [highlighted, setHighlighted] = useState("");
+
+
+
+  /* ============================================
+     LOAD ARTICLE OR REDIRECT TO NEXT IN QUEUE
+  ============================================ */
+
   useEffect(() => {
-    if (articleId) {
-      getArticleById(articleId).then((a) => {
-        if (a) setArticle(a);
-      });
-    } else {
-      getReviewQueue().then((q) => {
-        if (q.length > 0) {
-          navigate(`/review/${q[0].article.id}`, { replace: true });
-        }
-      });
+
+    if (loading) return;
+
+    if (!user) {
+
+      navigate("/login");
+      return;
+
     }
-  }, [articleId, navigate]);
 
-  function computePoliticalScore() {
-    if (!politicalDirection) return 0;
-    if (politicalDirection === "neutral") return 0;
+    async function loadArticle() {
 
-    const magnitude = politicalIntensity / 5;
+      setLoadingArticle(true);
 
-    return politicalDirection === "left"
-      ? -magnitude
-      : magnitude;
+      try {
+
+        if (!articleId) {
+
+          await loadNextFromQueue();
+          return;
+
+        }
+
+        const fetched = await getArticleById(articleId);
+
+        if (!fetched) {
+
+          await loadNextFromQueue();
+          return;
+
+        }
+
+        setArticle(fetched);
+
+      }
+      catch (err) {
+
+        console.error(err);
+        toast.error("Failed to load article");
+
+      }
+      finally {
+
+        setLoadingArticle(false);
+
+      }
+
+    }
+
+    loadArticle();
+
+  }, [articleId, user, loading]);
+
+
+
+  /* ============================================
+     LOAD NEXT ARTICLE FROM QUEUE
+  ============================================ */
+
+  async function loadNextFromQueue() {
+
+    if (!user) return;
+
+    try {
+
+      setArticle(null);
+
+      const queue = await getReviewQueue(user.id);
+
+      if (!queue || queue.length === 0) {
+
+        navigate("/reviewer", { replace: true });
+        return;
+
+      }
+
+      const nextId = queue[0].article.id;
+
+      navigate(`/review/${nextId}`, { replace: true });
+
+    }
+    catch (err) {
+
+      console.error(err);
+      toast.error("Failed to load review queue");
+
+    }
+
   }
 
-  const handleSubmit = async () => {
-    if (!article || !user) {
-      toast.error("Authentication error");
+
+
+  /* ============================================
+     CONTENT VALIDATION
+  ============================================ */
+
+  const contentLength =
+    article?.content?.trim().length || 0;
+
+  const isContentValid =
+    contentLength >= MIN_CONTENT_LENGTH;
+
+
+
+  /* ============================================
+     SUBMIT REVIEW
+  ============================================ */
+
+  async function handleSubmit() {
+
+    if (!article || !user)
       return;
+
+    if (!isContentValid) {
+
+      toast.error("Article too short. Please skip.");
+      return;
+
     }
 
     setSubmitting(true);
 
     try {
+
       await submitReview({
-        articleId: article.id,
-        reviewerId: user.id,
-        political: computePoliticalScore(),
+
+        article_id: article.id,
+
+        reviewer_id: user.id,
+
+        political: 0,
+
         intensity,
-        sensationalism,
+
+        sensational: sensationalism,
+
         threat,
-        groupConflict,
+
+        group_conflict: groupConflict,
+
         comment,
-        highlightedSentence: highlighted,
+
+        highlighted_sentence: highlighted,
+
       });
 
       toast.success("Review submitted");
 
-      const queue = await getReviewQueue();
+      await loadNextFromQueue();
 
-      if (queue.length > 0) {
-        navigate(`/review/${queue[0].article.id}`);
-      } else {
-        navigate("/reviewer");
-      }
+    }
+    catch (err) {
 
-    } catch (e) {
+      console.error(err);
+
       toast.error("Submission failed");
+
+    }
+    finally {
+
+      setSubmitting(false);
+
     }
 
-    setSubmitting(false);
-  };
-
-  const handleSkip = async () => {
-    toast.info("Article skipped");
-
-    const queue = await getReviewQueue();
-
-    if (queue.length > 0) {
-      navigate(`/review/${queue[0].article.id}`);
-    } else {
-      navigate("/reviewer");
-    }
-  };
-
-  if (!article) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        Loading...
-      </div>
-    );
   }
 
-  const SliderField = ({
+
+
+  /* ============================================
+     SKIP ARTICLE
+  ============================================ */
+
+  async function handleSkip() {
+
+    toast.info("Article skipped");
+
+    await loadNextFromQueue();
+
+  }
+
+
+
+  /* ============================================
+     LOADING STATE
+  ============================================ */
+
+  if (loading || loadingArticle || !article) {
+
+    return (
+
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+
+        Loading article...
+
+      </div>
+
+    );
+
+  }
+
+
+
+  /* ============================================
+     SLIDER COMPONENT
+  ============================================ */
+
+  function SliderField({
+
     label,
     value,
     onChange,
+
   }: {
+
     label: string;
     value: number;
-    onChange: (v: number) => void;
-  }) => (
-    <div>
-      <div className="flex justify-between mb-1">
-        <label className="text-xs font-medium text-muted-foreground">
-          {label}
-        </label>
-        <span className="text-xs font-semibold">{value}</span>
+    onChange: (v:number)=>void;
+
+  }) {
+
+    return (
+
+      <div>
+
+        <div className="flex justify-between mb-1">
+
+          <label className="text-xs text-muted-foreground">
+
+            {label}
+
+          </label>
+
+          <span className="text-xs font-semibold">
+
+            {value}
+
+          </span>
+
+        </div>
+
+        <input
+          type="range"
+          min={1}
+          max={5}
+          step={1}
+          value={value}
+          onChange={(e)=>onChange(parseInt(e.target.value))}
+          className="w-full cursor-pointer"
+        />
+
       </div>
 
-      <input
-        type="range"
-        min={1}
-        max={5}
-        step={1}
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
-        className="w-full h-2 accent-primary cursor-pointer"
-      />
+    );
 
-      <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-        <span>Low</span>
-        <span>High</span>
-      </div>
-    </div>
-  );
+  }
+
+
+
+  /* ============================================
+     UI
+  ============================================ */
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-5xl">
+
+    <div className="p-6 max-w-5xl space-y-6">
 
       <button
-        onClick={() => navigate("/reviewer")}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        onClick={()=>navigate("/reviewer")}
+        className="flex items-center gap-1 text-sm text-muted-foreground"
       >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Dashboard
+
+        <ArrowLeft className="h-4 w-4"/>
+
+        Back
+
       </button>
 
-      <h1 className="text-xl font-bold">Review Article</h1>
 
-      <div className="grid gap-6 lg:grid-cols-2">
 
-        {/* Article */}
+      <div className="grid lg:grid-cols-2 gap-6">
+
+
+
+        {/* ARTICLE PANEL */}
+
         <div className="space-y-4">
 
-          <div className="rounded-lg border bg-card p-5">
+          <div className="border rounded-lg p-5">
 
-            <h2 className="font-semibold">{article.headline}</h2>
+            <h2 className="font-semibold">
 
-            <p className="text-xs text-muted-foreground mt-1">
-              {article.publisher} · {new Date(article.date).toLocaleDateString()}
+              {article.headline}
+
+            </h2>
+
+            <p className="text-xs text-muted-foreground">
+
+              {article.publisher}
+
             </p>
 
-            <div className="mt-3 whitespace-pre-line text-sm max-h-[400px] overflow-y-auto">
+
+
+            {!isContentValid && (
+
+              <div className="text-yellow-600 flex gap-2 mt-3 text-sm">
+
+                <AlertTriangle className="h-4 w-4"/>
+
+                Article too short ({contentLength} chars). Please skip.
+
+              </div>
+
+            )}
+
+
+
+            <div className="mt-3 text-sm whitespace-pre-line max-h-[400px] overflow-y-auto">
+
               {article.content}
+
             </div>
 
           </div>
 
-          <div className="rounded-lg border bg-card p-5 space-y-3">
 
-            <h3 className="text-sm font-semibold">AI Analysis</h3>
 
-            <SpectrumBar value={article.politicalLeaning} height="sm" />
+          <div className="border rounded-lg p-5 space-y-2">
 
-            <HeatBar value={article.emotionalIntensity} label="Emotional Intensity" />
+            <SpectrumBar value={article.politicalLeaning}/>
 
-            <HeatBar value={article.tribalActivation} label="Tribal Activation" color="red" />
+            <HeatBar value={article.emotionalIntensity} label="Intensity"/>
+
+            <HeatBar value={article.tribalActivation} label="Us vs Them"/>
 
           </div>
 
         </div>
 
-        {/* Review */}
-        <div className="rounded-lg border bg-card p-5 space-y-5">
 
-          <h3 className="text-sm font-semibold">Your Review</h3>
 
-          {/* Political Direction */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">
-              Political Direction
-            </label>
+        {/* REVIEW PANEL */}
 
-            <div className="flex gap-2 mt-2">
+        <div className="border rounded-lg p-5 space-y-4">
 
-              {["left", "neutral", "right"].map((dir) => (
-                <button
-                  key={dir}
-                  onClick={() => setPoliticalDirection(dir as PoliticalDirection)}
-                  className={`px-3 py-1 rounded border text-sm ${
-                    politicalDirection === dir
-                      ? "bg-primary text-white"
-                      : "bg-background"
-                  }`}
-                >
-                  {dir.toUpperCase()}
-                </button>
-              ))}
+          <SliderField label="Emotional Intensity" value={intensity} onChange={setIntensity}/>
 
-            </div>
-          </div>
+          <SliderField label="Sensationalism" value={sensationalism} onChange={setSensationalism}/>
 
-          {/* Political Intensity */}
-          {politicalDirection && (
-            <SliderField
-              label="Political Intensity"
-              value={politicalIntensity}
-              onChange={setPoliticalIntensity}
-            />
-          )}
+          <SliderField label="Threat Signal" value={threat} onChange={setThreat}/>
 
-          <SliderField label="Emotional Intensity" value={intensity} onChange={setIntensity} />
+          <SliderField label="Group Conflict" value={groupConflict} onChange={setGroupConflict}/>
 
-          <SliderField label="Sensationalism" value={sensationalism} onChange={setSensationalism} />
 
-          <SliderField label="Threat Signal" value={threat} onChange={setThreat} />
 
-          <SliderField label="Group Conflict" value={groupConflict} onChange={setGroupConflict} />
-
-          {/* Comment */}
           <textarea
             value={comment}
-            onChange={(e) => setComment(e.target.value)}
+            onChange={(e)=>setComment(e.target.value)}
+            className="w-full border rounded p-2"
             placeholder="Optional comment"
-            className="w-full border rounded p-2 text-sm"
           />
 
-          {/* Buttons */}
+
+
           <div className="flex gap-2">
 
             <button
               onClick={handleSkip}
-              className="flex-1 border rounded px-3 py-2 flex items-center justify-center gap-2"
+              className="flex-1 border rounded py-2 flex gap-2 justify-center items-center"
             >
-              <SkipForward className="h-4 w-4" />
+
+              <SkipForward className="h-4 w-4"/>
+
               Skip
+
             </button>
+
+
 
             <button
               onClick={handleSubmit}
-              disabled={submitting}
-              className="flex-1 bg-primary text-white rounded px-3 py-2 flex items-center justify-center gap-2"
+              disabled={!isContentValid || submitting}
+              className="flex-1 bg-primary text-white rounded py-2 flex gap-2 justify-center items-center"
             >
-              <Send className="h-4 w-4" />
+
+              <Send className="h-4 w-4"/>
+
               {submitting ? "Submitting..." : "Submit"}
+
             </button>
 
           </div>
 
         </div>
 
+
+
       </div>
 
     </div>
+
   );
+
 }
