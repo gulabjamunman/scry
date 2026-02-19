@@ -29,9 +29,14 @@ export default function ReviewPage() {
 
   const [comment, setComment] = useState("");
   const [highlighted, setHighlighted] = useState("");
+
+  // Skipped IDs live outside the effect so they persist across article navigations
   const [skippedArticleIds, setSkippedArticleIds] = useState<string[]>([]);
 
-  const loadNextFromQueue = useCallback(async (skipArticleId?: string) => {
+  const loadNextFromQueue = useCallback(async (
+    skipArticleId?: string,
+    overrideSkipped?: string[]   // accept synchronously-built list to avoid stale state
+  ) => {
     if (!user) return;
 
     try {
@@ -44,8 +49,11 @@ export default function ReviewPage() {
         return;
       }
 
+      // Use the override if provided, otherwise fall back to state
+      const skippedToUse = overrideSkipped ?? skippedArticleIds;
+
       const excludedIds = new Set([
-        ...skippedArticleIds,
+        ...skippedToUse,
         ...(skipArticleId ? [String(skipArticleId)] : []),
         ...(articleId ? [String(articleId)] : []),
       ]);
@@ -89,6 +97,8 @@ export default function ReviewPage() {
         }
 
         setArticle(fetched);
+
+        // Reset form fields only — do NOT reset skippedArticleIds here
         setPoliticalLeaning(null);
         setIntensity(3);
         setSensationalism(3);
@@ -96,7 +106,6 @@ export default function ReviewPage() {
         setGroupConflict(3);
         setComment("");
         setHighlighted("");
-        setSkippedArticleIds([]);
       } catch (err) {
         console.error(err);
         toast.error("Failed to load article");
@@ -159,8 +168,13 @@ export default function ReviewPage() {
     if (!article) return;
 
     toast.info("Article skipped");
-    setSkippedArticleIds((prev) => [...prev, String(article.id)]);
-    await loadNextFromQueue(article.id);
+
+    // Build the new skipped list synchronously before state updates
+    const newSkipped = [...skippedArticleIds, String(article.id)];
+    setSkippedArticleIds(newSkipped);
+
+    // Pass the new list directly so loadNextFromQueue doesn't read stale state
+    await loadNextFromQueue(article.id, newSkipped);
   }
 
   if (loading || loadingArticle || !article) {
