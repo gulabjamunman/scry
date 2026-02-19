@@ -4,7 +4,7 @@ import { getArticleById, getReviewQueue, submitReview } from "@/lib/api";
 import type { Article } from "@/lib/types";
 import { SpectrumBar } from "@/components/SpectrumBar";
 import { HeatBar } from "@/components/HeatBar";
-import { ArrowLeft, Send, SkipForward, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Send, SkipForward } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 
@@ -21,10 +21,15 @@ export default function ReviewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadingArticle, setLoadingArticle] = useState(true);
 
+  // Maps to: political (int -1 | 0 | 1)
   const [politicalLeaning, setPoliticalLeaning] = useState<PoliticalLeaning | null>(null);
-  const [intensity, setIntensity] = useState(3);
+  // Maps to: intensity (int4)
+  const [languageIntensity, setLanguageIntensity] = useState(3);
+  // Maps to: sensational (int4)
   const [sensationalism, setSensationalism] = useState(3);
+  // Maps to: threat (int4)
   const [threat, setThreat] = useState(3);
+  // Maps to: group_conflict (int4)
   const [groupConflict, setGroupConflict] = useState(3);
 
   const [comment, setComment] = useState("");
@@ -35,7 +40,7 @@ export default function ReviewPage() {
 
   const loadNextFromQueue = useCallback(async (
     skipArticleId?: string,
-    overrideSkipped?: string[]   // accept synchronously-built list to avoid stale state
+    overrideSkipped?: string[]
   ) => {
     if (!user) return;
 
@@ -49,7 +54,6 @@ export default function ReviewPage() {
         return;
       }
 
-      // Use the override if provided, otherwise fall back to state
       const skippedToUse = overrideSkipped ?? skippedArticleIds;
 
       const excludedIds = new Set([
@@ -96,11 +100,21 @@ export default function ReviewPage() {
           return;
         }
 
+        // Auto-skip articles that are too short
+        const contentLength = fetched.content?.trim().length || 0;
+        if (contentLength < MIN_CONTENT_LENGTH) {
+          toast.info("Article too short — auto-skipped");
+          const newSkipped = [...skippedArticleIds, String(fetched.id)];
+          setSkippedArticleIds(newSkipped);
+          await loadNextFromQueue(fetched.id, newSkipped);
+          return;
+        }
+
         setArticle(fetched);
 
         // Reset form fields only — do NOT reset skippedArticleIds here
         setPoliticalLeaning(null);
-        setIntensity(3);
+        setLanguageIntensity(3);
         setSensationalism(3);
         setThreat(3);
         setGroupConflict(3);
@@ -117,9 +131,6 @@ export default function ReviewPage() {
     loadArticle();
   }, [articleId, user, loading, navigate, loadNextFromQueue]);
 
-  const contentLength = article?.content?.trim().length || 0;
-  const isContentValid = contentLength >= MIN_CONTENT_LENGTH;
-
   function mapPoliticalValue(value: PoliticalLeaning): -1 | 0 | 1 {
     if (value === "left") return -1;
     if (value === "right") return 1;
@@ -128,11 +139,6 @@ export default function ReviewPage() {
 
   async function handleSubmit() {
     if (!article || !user) return;
-
-    if (!isContentValid) {
-      toast.error("Article too short. Please skip.");
-      return;
-    }
 
     if (!politicalLeaning) {
       toast.error("Select political leaning before submitting");
@@ -143,13 +149,13 @@ export default function ReviewPage() {
 
     try {
       await submitReview({
-        article_id: article.id,
-        reviewer_id: user.id,
-        political: mapPoliticalValue(politicalLeaning),
-        intensity,
-        sensational: sensationalism,
-        threat,
-        group_conflict: groupConflict,
+        article_id:       article.id,
+        reviewer_id:      user.id,
+        political:        mapPoliticalValue(politicalLeaning), // political
+        intensity:        languageIntensity,                   // intensity
+        sensational:      sensationalism,                      // sensational
+        threat:           threat,                              // threat
+        group_conflict:   groupConflict,                       // group_conflict
         comment,
         highlighted_sentence: highlighted,
       });
@@ -169,11 +175,8 @@ export default function ReviewPage() {
 
     toast.info("Article skipped");
 
-    // Build the new skipped list synchronously before state updates
     const newSkipped = [...skippedArticleIds, String(article.id)];
     setSkippedArticleIds(newSkipped);
-
-    // Pass the new list directly so loadNextFromQueue doesn't read stale state
     await loadNextFromQueue(article.id, newSkipped);
   }
 
@@ -198,7 +201,6 @@ export default function ReviewPage() {
           <label className="text-xs text-muted-foreground">{label}</label>
           <span className="text-xs font-semibold">{value}</span>
         </div>
-
         <input
           type="range"
           min={1}
@@ -221,18 +223,11 @@ export default function ReviewPage() {
       </button>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* Left column — article content + AI scores */}
         <div className="space-y-4">
           <div className="rounded-lg border p-5">
             <h2 className="font-semibold">{article.headline}</h2>
             <p className="text-xs text-muted-foreground">{article.publisher}</p>
-
-            {!isContentValid && (
-              <div className="mt-3 flex gap-2 text-sm text-yellow-600">
-                <AlertTriangle className="h-4 w-4" />
-                Article too short ({contentLength} chars). Please skip.
-              </div>
-            )}
-
             <div className="mt-3 max-h-[400px] overflow-y-auto whitespace-pre-line text-sm">{article.content}</div>
           </div>
 
@@ -243,14 +238,17 @@ export default function ReviewPage() {
           </div>
         </div>
 
+        {/* Right column — review form */}
         <div className="space-y-4 rounded-lg border p-5">
+
+          {/* 1. Political Direction → political */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">Political Leaning</label>
+            <label className="text-xs text-muted-foreground">Political Direction</label>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { key: "left", label: "Left" },
+                { key: "left",    label: "Left"    },
                 { key: "neutral", label: "Neutral" },
-                { key: "right", label: "Right" },
+                { key: "right",   label: "Right"   },
               ] as const).map((option) => (
                 <button
                   key={option.key}
@@ -264,22 +262,38 @@ export default function ReviewPage() {
                 </button>
               ))}
             </div>
+            {!politicalLeaning && (
+              <p className="text-xs text-muted-foreground">Please select a political direction.</p>
+            )}
           </div>
 
+          {/* 2. Language Intensity → intensity */}
           <SliderField
-            label="Political Direction Intensity"
-            value={intensity}
-            onChange={setIntensity}
-            disabled={!politicalLeaning}
+            label="Language Intensity"
+            value={languageIntensity}
+            onChange={setLanguageIntensity}
           />
 
-          {!politicalLeaning && (
-            <p className="text-xs text-muted-foreground">Select political leaning first to enable intensity.</p>
-          )}
+          {/* 3. Sensationalism → sensational */}
+          <SliderField
+            label="Sensationalism"
+            value={sensationalism}
+            onChange={setSensationalism}
+          />
 
-          <SliderField label="Sensationalism" value={sensationalism} onChange={setSensationalism} />
-          <SliderField label="Threat Signal" value={threat} onChange={setThreat} />
-          <SliderField label="Group Conflict" value={groupConflict} onChange={setGroupConflict} />
+          {/* 4. Threat Signal → threat */}
+          <SliderField
+            label="Threat Signal"
+            value={threat}
+            onChange={setThreat}
+          />
+
+          {/* 5. Group Conflict → group_conflict */}
+          <SliderField
+            label="Group Conflict"
+            value={groupConflict}
+            onChange={setGroupConflict}
+          />
 
           <textarea
             value={comment}
@@ -299,7 +313,7 @@ export default function ReviewPage() {
 
             <button
               onClick={handleSubmit}
-              disabled={!isContentValid || submitting || !politicalLeaning}
+              disabled={submitting || !politicalLeaning}
               className="flex flex-1 items-center justify-center gap-2 rounded bg-primary py-2 text-white disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
