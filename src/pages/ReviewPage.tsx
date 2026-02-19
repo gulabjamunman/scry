@@ -100,6 +100,14 @@ export default function ReviewPage() {
           return;
         }
 
+        const fetched = await getArticleById(articleId);
+        console.log({
+          id: fetched?.id,
+          contentLength: fetched?.content?.trim().length,
+          contentPreview: fetched?.content?.slice(0, 150),
+          rawContent: fetched?.content,
+        });
+        
         // Auto-skip articles that are too short
         const contentLength = fetched.content?.trim().length || 0;
         if (contentLength < MIN_CONTENT_LENGTH) {
