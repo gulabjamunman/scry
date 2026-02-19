@@ -174,10 +174,13 @@ export async function getReviewQueue(
   const reviewedIds =
     reviewed?.map(r=>r.article_id)||[]
 
+  // Only fetch lightweight fields needed to build the queue.
+  // Full article content is loaded on demand by getArticleById() when a reviewer opens an article.
+  // Fetching content for 700+ articles in one query causes oversized payloads and dropped responses.
   let query =
     supabase
       .from("processed_articles")
-      .select("*")
+      .select("id, publication_datetime, headline, publisher_name, ai_framing_direction, ai_emotional_intensity, ai_us_vs_them_score")
       .order("publication_datetime",{ascending:false})
 
   if(reviewedIds.length)
