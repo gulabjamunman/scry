@@ -22,8 +22,10 @@ export default function ReviewPage() {
   const [skipping, setSkipping] = useState(false);
   const [loadingArticle, setLoadingArticle] = useState(true);
 
-  // Maps to: political (int -1 | 0 | 1)
+  // Political direction + intensity combine into a -5 to +5 value stored in `political`
   const [politicalLeaning, setPoliticalLeaning] = useState<PoliticalLeaning | null>(null);
+  const [politicalIntensity, setPoliticalIntensity] = useState(3);
+
   // Maps to: intensity (int4)
   const [languageIntensity, setLanguageIntensity] = useState(3);
   // Maps to: sensational (int4)
@@ -36,8 +38,16 @@ export default function ReviewPage() {
   const [comment, setComment] = useState("");
   const [highlighted, setHighlighted] = useState("");
 
-  // Skipped IDs live outside the effect so they persist across article navigations
+  // Skipped IDs persist across article navigations — never reset on article load
   const [skippedArticleIds, setSkippedArticleIds] = useState<string[]>([]);
+
+  // Combines direction and intensity into a single -5 to +5 integer for `political`
+  // Neutral always returns 0 regardless of intensity
+  function computePoliticalValue(): number {
+    if (!politicalLeaning || politicalLeaning === "neutral") return 0;
+    const direction = politicalLeaning === "left" ? -1 : 1;
+    return direction * politicalIntensity;
+  }
 
   const loadNextFromQueue = useCallback(async (
     skipArticleId?: string,
@@ -115,6 +125,7 @@ export default function ReviewPage() {
 
         // Reset form fields only — do NOT reset skippedArticleIds here
         setPoliticalLeaning(null);
+        setPoliticalIntensity(3);
         setLanguageIntensity(3);
         setSensationalism(3);
         setThreat(3);
@@ -133,17 +144,11 @@ export default function ReviewPage() {
     loadArticle();
   }, [articleId, user, loading, navigate, loadNextFromQueue]);
 
-  function mapPoliticalValue(value: PoliticalLeaning): -1 | 0 | 1 {
-    if (value === "left") return -1;
-    if (value === "right") return 1;
-    return 0;
-  }
-
   async function handleSubmit() {
     if (!article || !user) return;
 
     if (!politicalLeaning) {
-      toast.error("Select political leaning before submitting");
+      toast.error("Select political direction before submitting");
       return;
     }
 
@@ -153,11 +158,11 @@ export default function ReviewPage() {
       await submitReview({
         article_id:           article.id,
         reviewer_id:          user.id,
-        political:            mapPoliticalValue(politicalLeaning),
-        intensity:            languageIntensity,
-        sensational:          sensationalism,
-        threat:               threat,
-        group_conflict:       groupConflict,
+        political:            computePoliticalValue(), // -5 to +5
+        intensity:            languageIntensity,       // → intensity
+        sensational:          sensationalism,          // → sensational
+        threat:               threat,                 // → threat
+        group_conflict:       groupConflict,           // → group_conflict
         comment,
         highlighted_sentence: highlighted,
       });
@@ -183,7 +188,7 @@ export default function ReviewPage() {
     await loadNextFromQueue(article.id, newSkipped);
   }
 
-  // Unified busy state — blocks all interaction during skip or submit
+  // Unified busy state — blocks all interaction while skipping or submitting
   const isBusy = skipping || submitting;
 
   if (loading || loadingArticle || !article) {
@@ -219,7 +224,7 @@ export default function ReviewPage() {
           value={value}
           onChange={(e) => onChange(parseInt(e.target.value, 10))}
           disabled={disabled}
-          className="w-full cursor-pointer disabled:cursor-not-allowed"
+          className="w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
         />
       </div>
     );
@@ -229,14 +234,14 @@ export default function ReviewPage() {
     <div className="max-w-5xl space-y-6 p-6">
       <button
         onClick={() => navigate("/reviewer")}
-        className="flex items-center gap-1 text-sm text-muted-foreground"
         disabled={isBusy}
+        className="flex items-center gap-1 text-sm text-muted-foreground disabled:opacity-40"
       >
         <ArrowLeft className="h-4 w-4" />
         Back
       </button>
 
-      {/* Full-page overlay while skipping to block all interaction */}
+      {/* Fades and blocks all interaction while skipping or submitting */}
       <div className={`grid gap-6 lg:grid-cols-2 transition-opacity duration-150 ${isBusy ? "pointer-events-none opacity-40" : ""}`}>
 
         {/* Left column — article content + AI scores */}
@@ -257,34 +262,72 @@ export default function ReviewPage() {
         {/* Right column — review form */}
         <div className="space-y-4 rounded-lg border p-5">
 
-          {/* 1. Political Direction → political */}
-          <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">Political Direction</label>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { key: "left",    label: "Left"    },
-                { key: "neutral", label: "Neutral" },
-                { key: "right",   label: "Right"   },
-              ] as const).map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setPoliticalLeaning(option.key)}
-                  disabled={isBusy}
-                  className={`rounded border py-2 text-sm ${
-                    politicalLeaning === option.key ? "bg-primary text-white" : "bg-background"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+          {/* Political Direction + Intensity → stored as direction × intensity in `political` */}
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground">Political Direction</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { key: "left",    label: "Left"    },
+                  { key: "neutral", label: "Neutral" },
+                  { key: "right",   label: "Right"   },
+                ] as const).map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setPoliticalLeaning(option.key)}
+                    disabled={isBusy}
+                    className={`rounded border py-2 text-sm transition-colors ${
+                      politicalLeaning === option.key ? "bg-primary text-white" : "bg-background"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {!politicalLeaning && (
+                <p className="text-xs text-muted-foreground">Please select a political direction.</p>
+              )}
             </div>
-            {!politicalLeaning && (
-              <p className="text-xs text-muted-foreground">Please select a political direction.</p>
+
+            {/* Intensity slider — only shown when Left or Right is selected */}
+            {politicalLeaning && politicalLeaning !== "neutral" && (
+              <div>
+                <div className="mb-1 flex justify-between">
+                  <label className="text-xs text-muted-foreground">
+                    {politicalLeaning === "left" ? "Left" : "Right"} Intensity
+                  </label>
+                  <span className="text-xs font-semibold">
+                    {politicalLeaning === "left" ? "-" : "+"}{politicalIntensity}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  step={1}
+                  value={politicalIntensity}
+                  onChange={(e) => setPoliticalIntensity(parseInt(e.target.value, 10))}
+                  disabled={isBusy}
+                  className="w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                />
+                <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+                  <span>Mild</span>
+                  <span>Strong</span>
+                </div>
+              </div>
+            )}
+
+            {/* Show the computed value that will be stored */}
+            {politicalLeaning && (
+              <p className="text-xs text-muted-foreground">
+                Stored value: <span className="font-semibold">{computePoliticalValue()}</span>
+                {" "}(range: −5 to +5)
+              </p>
             )}
           </div>
 
-          {/* 2. Language Intensity → intensity */}
+          {/* Language Intensity → intensity */}
           <SliderField
             label="Language Intensity"
             value={languageIntensity}
@@ -292,7 +335,7 @@ export default function ReviewPage() {
             disabled={isBusy}
           />
 
-          {/* 3. Sensationalism → sensational */}
+          {/* Sensationalism → sensational */}
           <SliderField
             label="Sensationalism"
             value={sensationalism}
@@ -300,7 +343,7 @@ export default function ReviewPage() {
             disabled={isBusy}
           />
 
-          {/* 4. Threat Signal → threat */}
+          {/* Threat Signal → threat */}
           <SliderField
             label="Threat Signal"
             value={threat}
@@ -308,7 +351,7 @@ export default function ReviewPage() {
             disabled={isBusy}
           />
 
-          {/* 5. Group Conflict → group_conflict */}
+          {/* Group Conflict → group_conflict */}
           <SliderField
             label="Group Conflict"
             value={groupConflict}
