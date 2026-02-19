@@ -19,6 +19,7 @@ export default function ReviewPage() {
 
   const [article, setArticle] = useState<Article | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const [loadingArticle, setLoadingArticle] = useState(true);
 
   // Maps to: political (int -1 | 0 | 1)
@@ -100,14 +101,6 @@ export default function ReviewPage() {
           return;
         }
 
-        const fetched = await getArticleById(articleId);
-        console.log({
-          id: fetched?.id,
-          contentLength: fetched?.content?.trim().length,
-          contentPreview: fetched?.content?.slice(0, 150),
-          rawContent: fetched?.content,
-        });
-        
         // Auto-skip articles that are too short
         const contentLength = fetched.content?.trim().length || 0;
         if (contentLength < MIN_CONTENT_LENGTH) {
@@ -133,6 +126,7 @@ export default function ReviewPage() {
         toast.error("Failed to load article");
       } finally {
         setLoadingArticle(false);
+        setSkipping(false);
       }
     }
 
@@ -157,13 +151,13 @@ export default function ReviewPage() {
 
     try {
       await submitReview({
-        article_id:       article.id,
-        reviewer_id:      user.id,
-        political:        mapPoliticalValue(politicalLeaning), // political
-        intensity:        languageIntensity,                   // intensity
-        sensational:      sensationalism,                      // sensational
-        threat:           threat,                              // threat
-        group_conflict:   groupConflict,                       // group_conflict
+        article_id:           article.id,
+        reviewer_id:          user.id,
+        political:            mapPoliticalValue(politicalLeaning),
+        intensity:            languageIntensity,
+        sensational:          sensationalism,
+        threat:               threat,
+        group_conflict:       groupConflict,
         comment,
         highlighted_sentence: highlighted,
       });
@@ -179,8 +173,9 @@ export default function ReviewPage() {
   }
 
   async function handleSkip() {
-    if (!article) return;
+    if (!article || skipping) return;
 
+    setSkipping(true);
     toast.info("Article skipped");
 
     const newSkipped = [...skippedArticleIds, String(article.id)];
@@ -188,8 +183,15 @@ export default function ReviewPage() {
     await loadNextFromQueue(article.id, newSkipped);
   }
 
+  // Unified busy state — blocks all interaction during skip or submit
+  const isBusy = skipping || submitting;
+
   if (loading || loadingArticle || !article) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground">Loading article...</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        Loading article...
+      </div>
+    );
   }
 
   function SliderField({
@@ -225,12 +227,18 @@ export default function ReviewPage() {
 
   return (
     <div className="max-w-5xl space-y-6 p-6">
-      <button onClick={() => navigate("/reviewer")} className="flex items-center gap-1 text-sm text-muted-foreground">
+      <button
+        onClick={() => navigate("/reviewer")}
+        className="flex items-center gap-1 text-sm text-muted-foreground"
+        disabled={isBusy}
+      >
         <ArrowLeft className="h-4 w-4" />
         Back
       </button>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Full-page overlay while skipping to block all interaction */}
+      <div className={`grid gap-6 lg:grid-cols-2 transition-opacity duration-150 ${isBusy ? "pointer-events-none opacity-40" : ""}`}>
+
         {/* Left column — article content + AI scores */}
         <div className="space-y-4">
           <div className="rounded-lg border p-5">
@@ -262,6 +270,7 @@ export default function ReviewPage() {
                   key={option.key}
                   type="button"
                   onClick={() => setPoliticalLeaning(option.key)}
+                  disabled={isBusy}
                   className={`rounded border py-2 text-sm ${
                     politicalLeaning === option.key ? "bg-primary text-white" : "bg-background"
                   }`}
@@ -280,6 +289,7 @@ export default function ReviewPage() {
             label="Language Intensity"
             value={languageIntensity}
             onChange={setLanguageIntensity}
+            disabled={isBusy}
           />
 
           {/* 3. Sensationalism → sensational */}
@@ -287,6 +297,7 @@ export default function ReviewPage() {
             label="Sensationalism"
             value={sensationalism}
             onChange={setSensationalism}
+            disabled={isBusy}
           />
 
           {/* 4. Threat Signal → threat */}
@@ -294,6 +305,7 @@ export default function ReviewPage() {
             label="Threat Signal"
             value={threat}
             onChange={setThreat}
+            disabled={isBusy}
           />
 
           {/* 5. Group Conflict → group_conflict */}
@@ -301,28 +313,31 @@ export default function ReviewPage() {
             label="Group Conflict"
             value={groupConflict}
             onChange={setGroupConflict}
+            disabled={isBusy}
           />
 
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className="w-full rounded border p-2"
+            disabled={isBusy}
+            className="w-full rounded border p-2 disabled:cursor-not-allowed"
             placeholder="Optional comment"
           />
 
           <div className="flex gap-2">
             <button
               onClick={handleSkip}
-              className="flex flex-1 items-center justify-center gap-2 rounded border py-2"
+              disabled={isBusy}
+              className="flex flex-1 items-center justify-center gap-2 rounded border py-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <SkipForward className="h-4 w-4" />
-              Skip
+              {skipping ? "Skipping..." : "Skip"}
             </button>
 
             <button
               onClick={handleSubmit}
-              disabled={submitting || !politicalLeaning}
-              className="flex flex-1 items-center justify-center gap-2 rounded bg-primary py-2 text-white disabled:opacity-60"
+              disabled={isBusy || !politicalLeaning}
+              className="flex flex-1 items-center justify-center gap-2 rounded bg-primary py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
               {submitting ? "Submitting..." : "Submit"}
