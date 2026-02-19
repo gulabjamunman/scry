@@ -8,7 +8,7 @@ import { ArrowLeft, Send, SkipForward } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 
-const MIN_CONTENT_LENGTH = 200;
+const MIN_CONTENT_LENGTH = 120;
 
 type PoliticalLeaning = "left" | "neutral" | "right";
 
