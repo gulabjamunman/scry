@@ -174,13 +174,10 @@ export async function getReviewQueue(
   const reviewedIds =
     reviewed?.map(r=>r.article_id)||[]
 
-  // Only fetch lightweight fields needed to build the queue.
-  // Full article content is loaded on demand by getArticleById() when a reviewer opens an article.
-  // Fetching content for 700+ articles in one query causes oversized payloads and dropped responses.
   let query =
     supabase
       .from("processed_articles")
-      .select("id, publication_datetime, headline, publisher_name, ai_framing_direction, ai_emotional_intensity, ai_us_vs_them_score")
+      .select("*")
       .order("publication_datetime",{ascending:false})
 
   if(reviewedIds.length)
@@ -225,13 +222,27 @@ SUBMIT REVIEW
 
 export async function submitReview(review:any):Promise<void>{
 
+  // Only include columns that exist in human_reviews:
+  // id, article_id, reviewer_id, political, intensity, sensational,
+  // threat, group_conflict, highlight, created_at (auto), ai_* (populated separately)
+  const payload = {
+    article_id:    review.article_id,
+    reviewer_id:   review.reviewer_id,
+    political:     review.political,
+    intensity:     review.intensity,
+    sensational:   review.sensational,
+    threat:        review.threat,
+    group_conflict:review.group_conflict,
+    highlight:     review.highlight || null,
+  }
+
   const { error } =
     await supabase
       .from("human_reviews")
-      .insert(review)
+      .insert(payload)
 
   if(error)
-    console.error(error)
+    console.error("submitReview error:", error)
 }
 
 
