@@ -35,7 +35,6 @@ export default function ReviewPage() {
   // Maps to: group_conflict (int4)
   const [groupConflict, setGroupConflict] = useState(3);
 
-  const [comment, setComment] = useState("");
   const [highlighted, setHighlighted] = useState("");
 
   // Skipped IDs persist across article navigations — never reset on article load
@@ -50,8 +49,8 @@ export default function ReviewPage() {
   }
 
   const loadNextFromQueue = useCallback(async (
-    skipArticleId?: string,
-    overrideSkipped?: string[]
+    excludeId: string,           // the article we're moving away from — always exclude this
+    overrideSkipped?: string[]   // synchronously-built skip list to avoid stale state
   ) => {
     if (!user) return;
 
@@ -67,10 +66,10 @@ export default function ReviewPage() {
 
       const skippedToUse = overrideSkipped ?? skippedArticleIds;
 
+      // Only exclude: articles already skipped this session + the one we just left
       const excludedIds = new Set([
         ...skippedToUse,
-        ...(skipArticleId ? [String(skipArticleId)] : []),
-        ...(articleId ? [String(articleId)] : []),
+        excludeId,
       ]);
 
       const nextArticle = queue.find((item) => !excludedIds.has(String(item.article.id)));
@@ -85,7 +84,7 @@ export default function ReviewPage() {
       console.error(err);
       toast.error("Failed to load review queue");
     }
-  }, [articleId, navigate, skippedArticleIds, user]);
+  }, [navigate, skippedArticleIds, user]);
 
   useEffect(() => {
     if (loading) return;
@@ -99,15 +98,29 @@ export default function ReviewPage() {
       setLoadingArticle(true);
 
       try {
+        // No articleId — pick the first available article from queue
         if (!articleId) {
-          await loadNextFromQueue();
+          const queue = await getReviewQueue(user!.id);
+          if (!queue || queue.length === 0) {
+            navigate("/reviewer", { replace: true });
+            return;
+          }
+          const first = queue.find(
+            (item) => !skippedArticleIds.includes(String(item.article.id))
+          );
+          if (!first) {
+            navigate("/reviewer", { replace: true });
+            return;
+          }
+          navigate(`/review/${first.article.id}`, { replace: true });
           return;
         }
 
         const fetched = await getArticleById(articleId);
 
         if (!fetched) {
-          await loadNextFromQueue();
+          toast.error("Article not found");
+          navigate("/reviewer", { replace: true });
           return;
         }
 
@@ -130,7 +143,6 @@ export default function ReviewPage() {
         setSensationalism(3);
         setThreat(3);
         setGroupConflict(3);
-        setComment("");
         setHighlighted("");
       } catch (err) {
         console.error(err);
@@ -156,15 +168,14 @@ export default function ReviewPage() {
 
     try {
       await submitReview({
-        article_id:           article.id,
-        reviewer_id:          user.id,
-        political:            computePoliticalValue(), // -5 to +5
-        intensity:            languageIntensity,       // → intensity
-        sensational:          sensationalism,          // → sensational
-        threat:               threat,                 // → threat
-        group_conflict:       groupConflict,           // → group_conflict
-        comment,
-        highlighted_sentence: highlighted,
+        article_id:    article.id,
+        reviewer_id:   user.id,
+        political:     computePoliticalValue(), // -5 to +5
+        intensity:     languageIntensity,       // → intensity
+        sensational:   sensationalism,          // → sensational
+        threat:        threat,                  // → threat
+        group_conflict:groupConflict,           // → group_conflict
+        highlight:     highlighted || null,     // → highlight
       });
 
       toast.success("Review submitted");
@@ -359,13 +370,7 @@ export default function ReviewPage() {
             disabled={isBusy}
           />
 
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            disabled={isBusy}
-            className="w-full rounded border p-2 disabled:cursor-not-allowed"
-            placeholder="Optional comment"
-          />
+
 
           <div className="flex gap-2">
             <button
